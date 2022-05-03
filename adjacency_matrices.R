@@ -1,54 +1,10 @@
 source("packages.R")
 
-files <- factor(letters[1:8], ordered = TRUE, levels = letters[1:8])
-ranks <- factor(1:8, ordered = TRUE, levels = 1:8)
 
-chessboard_nodes <- expand.grid(file = files, rank = ranks) %>%
-  mutate(file_index = as.integer(file),
-         rank_index = as.integer(rank),
-         coordinates = paste0(file, rank))
-
-knight_mods <- expand.grid(c(-2,-1,1,2),c(-2,-1,1,2)) %>%
-  rename(file_mod = Var1,
-         rank_mod = Var2) %>%
-  filter (abs(file_mod) != abs(rank_mod)) %>%
-  mutate(type = "knight")
-
-rook_mods <- rbind(expand.grid(c(-7:7),c(0)), expand.grid(c(0),c(-7:7))) %>%
-  rename(file_mod = Var1,
-         rank_mod = Var2) %>%
-  filter (abs(file_mod) != abs(rank_mod)) %>%
-  mutate(type = "rook")
-
-bishop_mods <- expand.grid(c(-7:7),c(-7:7)) %>%
-  rename(file_mod = Var1,
-         rank_mod = Var2) %>%
-  filter (abs(file_mod) == abs(rank_mod) & abs(file_mod) != 0) %>%
-  mutate(type = "bishop")
-
-queen_mods <- rbind(rook_mods, bishop_mods) %>%
-  mutate(type = "queen")
-
-king_mods <- expand.grid(c(-1:1),c(-1:1)) %>%
-  rename(file_mod = Var1,
-         rank_mod = Var2) %>%
-  filter (abs(file_mod) + abs(rank_mod) != 0) %>%
-  mutate(type = "king")
-
-move_table <- merge(chessboard_nodes, rbind(knight_mods, rook_mods, bishop_mods, queen_mods, king_mods)) %>%
-  mutate(target_file = file_index + file_mod,
-         target_rank = rank_index + rank_mod) %>%
-  filter(target_file %in% c(1:8),
-         target_rank %in% c(1:8)) %>%
-  rename(source_file = file_index,
-         source_rank = rank_index) %>%
-  mutate(source_coordinates = paste0(letters[source_file], source_rank),
-         target_coordinates = paste0(letters[target_file], target_rank),
-         type = factor(type))
-
+piece <- "rook"
 
 generate_move_graph <- function(piece) {
-  if (!(piece %in% c("pawn", "knight", "bishop", "rook", "queen", "king"))) {
+  if (!(piece %in% piece_names)) {
    stop(paste0("Piece parameter character string '", piece, "' does not match recognized pieces"))
   } else {
     grouped_move_table <- move_table %>%
@@ -57,8 +13,9 @@ generate_move_graph <- function(piece) {
     links <- grouped_move_table %>%
       mutate(src = source_coordinates, 
              target = target_coordinates,
-             group = type) %>%
-      select(src, target, group)
+             group = type,
+             weight = travel) %>%
+      select(src, target, group, weight)
     
     nodes <- data.frame(name = as.character(chessboard_nodes$coordinates))
     
@@ -66,108 +23,214 @@ generate_move_graph <- function(piece) {
                        edges = links,
                        directed = FALSE)
     
-    board <- data.frame(x = -1:7 + 0.5, y = 0 + 0.5, xend = -1:7 + 0.5, yend = 7 - 0.5)
-    board <- data.frame(x = 0:8 - 0.5, y = 0 - 0.5, xend = 0:8 - 0.5, yend = 8 - 0.5)
     
+    
+    board <- data.frame(x = 0:8 - 0.5, y = 0 - 0.5, xend = 0:8 - 0.5, yend = 8 - 0.5)
     
     squares <- unique(data.frame(expand.grid(-1:8 + 0.5, -1:8 + 0.5)) %>%
       filter(Var1 < 7 & Var2 < 7) %>%
         rename(xmin = Var1,
                ymin = Var2) %>%
         mutate(xmax = xmin + 1,
-               ymax = ymin + 1)) 
+               ymax = ymin + 1,
+               sqr = rep(c(1,0,1,0,1,0,1,0,0,1,0,1,0,1,0,1),4))) 
+    
+    unicode_piece <- pieces_df %>%
+      filter(piece == name,
+             color == "black") %>%
+      select(unicode)
+    
+    unicode_piece <- unlist(unicode_piece)
+    
+    rank_labels <- data.frame(x = c(0:7),
+                              y = rep(7.75),
+                              label = c(1:8))
+    
+    file_labels <- data.frame(x = rep(-0.75),
+                              y = c(0:7),
+                              label = c(letters[1:8]))
     
     graph_plot <- ggraph(graph, layout = "grid") + 
-      geom_rect(xmin = squares$xmin[1],   xmax = squares$xmax[1],    ymin = squares$ymin[1],  ymax = squares$ymax[1],    fill = "gray70") +
-      geom_rect(xmin = squares$xmin[2],   xmax = squares$xmax[2],    ymin = squares$ymin[2],  ymax = squares$ymax[2],    fill = "gray30") +
-      geom_rect(xmin = squares$xmin[3],   xmax = squares$xmax[3],    ymin = squares$ymin[3],  ymax = squares$ymax[3],    fill = "gray70") +
-      geom_rect(xmin = squares$xmin[4],   xmax = squares$xmax[4],    ymin = squares$ymin[4],  ymax = squares$ymax[4],    fill = "gray30") +
-      geom_rect(xmin = squares$xmin[5],   xmax = squares$xmax[5],    ymin = squares$ymin[5],  ymax = squares$ymax[5],    fill = "gray70") +
-      geom_rect(xmin = squares$xmin[6],   xmax = squares$xmax[6],    ymin = squares$ymin[6],  ymax = squares$ymax[6],    fill = "gray30") +
-      geom_rect(xmin = squares$xmin[7],   xmax = squares$xmax[7],    ymin = squares$ymin[7],  ymax = squares$ymax[7],    fill = "gray70") +
-      geom_rect(xmin = squares$xmin[8],   xmax = squares$xmax[8],    ymin = squares$ymin[8],  ymax = squares$ymax[8],    fill = "gray30") +
-      
-      geom_rect(xmin = squares$xmin[9],   xmax = squares$xmax[9],    ymin = squares$ymin[9],  ymax = squares$ymax[9],    fill = "gray30") +
-      geom_rect(xmin = squares$xmin[10],  xmax = squares$xmax[10],   ymin = squares$ymin[10], ymax = squares$ymax[10],   fill = "gray70") +
-      geom_rect(xmin = squares$xmin[11],  xmax = squares$xmax[11],   ymin = squares$ymin[11], ymax = squares$ymax[11],   fill = "gray30") +
-      geom_rect(xmin = squares$xmin[12],  xmax = squares$xmax[12],   ymin = squares$ymin[12], ymax = squares$ymax[12],   fill = "gray70") +
-      geom_rect(xmin = squares$xmin[13],  xmax = squares$xmax[13],   ymin = squares$ymin[13], ymax = squares$ymax[13],   fill = "gray30") +
-      geom_rect(xmin = squares$xmin[14],  xmax = squares$xmax[14],   ymin = squares$ymin[14], ymax = squares$ymax[14],   fill = "gray70") +      
-      geom_rect(xmin = squares$xmin[15],  xmax = squares$xmax[13],   ymin = squares$ymin[13], ymax = squares$ymax[13],   fill = "gray30") +
-      geom_rect(xmin = squares$xmin[16],  xmax = squares$xmax[14],   ymin = squares$ymin[14], ymax = squares$ymax[14],   fill = "gray70") +
-      
-      geom_rect(xmin = squares$xmin[17],   xmax = squares$xmax[9],    ymin = squares$ymin[9],  ymax = squares$ymax[9],    fill = "gray70") +
-      geom_rect(xmin = squares$xmin[18],  xmax = squares$xmax[10],   ymin = squares$ymin[10], ymax = squares$ymax[10],   fill = "gray30") +
-      geom_rect(xmin = squares$xmin[19],  xmax = squares$xmax[11],   ymin = squares$ymin[11], ymax = squares$ymax[11],   fill = "gray70") +
-      geom_rect(xmin = squares$xmin[20],  xmax = squares$xmax[12],   ymin = squares$ymin[12], ymax = squares$ymax[12],   fill = "gray30") +
-      geom_rect(xmin = squares$xmin[21],  xmax = squares$xmax[13],   ymin = squares$ymin[13], ymax = squares$ymax[13],   fill = "gray70") +
-      geom_rect(xmin = squares$xmin[22],  xmax = squares$xmax[14],   ymin = squares$ymin[14], ymax = squares$ymax[14],   fill = "gray30") +      
-      geom_rect(xmin = squares$xmin[23],  xmax = squares$xmax[13],   ymin = squares$ymin[13], ymax = squares$ymax[13],   fill = "gray70") +
-      geom_rect(xmin = squares$xmin[24],  xmax = squares$xmax[14],   ymin = squares$ymin[14], ymax = squares$ymax[14],   fill = "gray30") +
-      
-      geom_rect(xmin = squares$xmin[25],   xmax = squares$xmax[9],    ymin = squares$ymin[9],  ymax = squares$ymax[9],    fill = "gray30") +
-      geom_rect(xmin = squares$xmin[26],  xmax = squares$xmax[10],   ymin = squares$ymin[10], ymax = squares$ymax[10],   fill = "gray70") +
-      geom_rect(xmin = squares$xmin[27],  xmax = squares$xmax[11],   ymin = squares$ymin[11], ymax = squares$ymax[11],   fill = "gray30") +
-      geom_rect(xmin = squares$xmin[28],  xmax = squares$xmax[12],   ymin = squares$ymin[12], ymax = squares$ymax[12],   fill = "gray70") +
-      geom_rect(xmin = squares$xmin[29],  xmax = squares$xmax[13],   ymin = squares$ymin[13], ymax = squares$ymax[13],   fill = "gray30") +
-      geom_rect(xmin = squares$xmin[30],  xmax = squares$xmax[14],   ymin = squares$ymin[14], ymax = squares$ymax[14],   fill = "gray70") +      
-      geom_rect(xmin = squares$xmin[31],  xmax = squares$xmax[13],   ymin = squares$ymin[13], ymax = squares$ymax[13],   fill = "gray30") +
-      geom_rect(xmin = squares$xmin[32],  xmax = squares$xmax[14],   ymin = squares$ymin[14], ymax = squares$ymax[14],   fill = "gray70") +
-      
-      geom_rect(xmin = squares$xmin[33],   xmax = squares$xmax[9],    ymin = squares$ymin[9],  ymax = squares$ymax[9],    fill = "gray70") +
-      geom_rect(xmin = squares$xmin[34],  xmax = squares$xmax[10],   ymin = squares$ymin[10], ymax = squares$ymax[10],   fill = "gray30") +
-      geom_rect(xmin = squares$xmin[11],  xmax = squares$xmax[11],   ymin = squares$ymin[11], ymax = squares$ymax[11],   fill = "gray70") +
-      geom_rect(xmin = squares$xmin[12],  xmax = squares$xmax[12],   ymin = squares$ymin[12], ymax = squares$ymax[12],   fill = "gray30") +
-      geom_rect(xmin = squares$xmin[13],  xmax = squares$xmax[13],   ymin = squares$ymin[13], ymax = squares$ymax[13],   fill = "gray70") +
-      geom_rect(xmin = squares$xmin[14],  xmax = squares$xmax[14],   ymin = squares$ymin[14], ymax = squares$ymax[14],   fill = "gray30") +      
-      geom_rect(xmin = squares$xmin[13],  xmax = squares$xmax[13],   ymin = squares$ymin[13], ymax = squares$ymax[13],   fill = "gray70") +
-      geom_rect(xmin = squares$xmin[14],  xmax = squares$xmax[14],   ymin = squares$ymin[14], ymax = squares$ymax[14],   fill = "gray30") +
-      
-      geom_rect(xmin = squares$xmin[9],   xmax = squares$xmax[9],    ymin = squares$ymin[9],  ymax = squares$ymax[9],    fill = "gray30") +
-      geom_rect(xmin = squares$xmin[10],  xmax = squares$xmax[10],   ymin = squares$ymin[10], ymax = squares$ymax[10],   fill = "gray70") +
-      geom_rect(xmin = squares$xmin[11],  xmax = squares$xmax[11],   ymin = squares$ymin[11], ymax = squares$ymax[11],   fill = "gray30") +
-      geom_rect(xmin = squares$xmin[12],  xmax = squares$xmax[12],   ymin = squares$ymin[12], ymax = squares$ymax[12],   fill = "gray70") +
-      geom_rect(xmin = squares$xmin[13],  xmax = squares$xmax[13],   ymin = squares$ymin[13], ymax = squares$ymax[13],   fill = "gray30") +
-      geom_rect(xmin = squares$xmin[14],  xmax = squares$xmax[14],   ymin = squares$ymin[14], ymax = squares$ymax[14],   fill = "gray70") +      
-      geom_rect(xmin = squares$xmin[13],  xmax = squares$xmax[13],   ymin = squares$ymin[13], ymax = squares$ymax[13],   fill = "gray30") +
-      geom_rect(xmin = squares$xmin[14],  xmax = squares$xmax[14],   ymin = squares$ymin[14], ymax = squares$ymax[14],   fill = "gray70") +
-      
-      geom_rect(xmin = squares$xmin[9],   xmax = squares$xmax[9],    ymin = squares$ymin[9],  ymax = squares$ymax[9],    fill = "gray70") +
-      geom_rect(xmin = squares$xmin[10],  xmax = squares$xmax[10],   ymin = squares$ymin[10], ymax = squares$ymax[10],   fill = "gray30") +
-      geom_rect(xmin = squares$xmin[11],  xmax = squares$xmax[11],   ymin = squares$ymin[11], ymax = squares$ymax[11],   fill = "gray70") +
-      geom_rect(xmin = squares$xmin[12],  xmax = squares$xmax[12],   ymin = squares$ymin[12], ymax = squares$ymax[12],   fill = "gray30") +
-      geom_rect(xmin = squares$xmin[13],  xmax = squares$xmax[13],   ymin = squares$ymin[13], ymax = squares$ymax[13],   fill = "gray70") +
-      geom_rect(xmin = squares$xmin[14],  xmax = squares$xmax[14],   ymin = squares$ymin[14], ymax = squares$ymax[14],   fill = "gray30") +      
-      geom_rect(xmin = squares$xmin[13],  xmax = squares$xmax[13],   ymin = squares$ymin[13], ymax = squares$ymax[13],   fill = "gray70") +
-      geom_rect(xmin = squares$xmin[14],  xmax = squares$xmax[14],   ymin = squares$ymin[14], ymax = squares$ymax[14],   fill = "gray30") +
-      
-      geom_rect(xmin = squares$xmin[9],   xmax = squares$xmax[9],    ymin = squares$ymin[9],  ymax = squares$ymax[9],    fill = "gray30") +
-      geom_rect(xmin = squares$xmin[10],  xmax = squares$xmax[10],   ymin = squares$ymin[10], ymax = squares$ymax[10],   fill = "gray70") +
-      geom_rect(xmin = squares$xmin[11],  xmax = squares$xmax[11],   ymin = squares$ymin[11], ymax = squares$ymax[11],   fill = "gray30") +
-      geom_rect(xmin = squares$xmin[12],  xmax = squares$xmax[12],   ymin = squares$ymin[12], ymax = squares$ymax[12],   fill = "gray70") +
-      geom_rect(xmin = squares$xmin[13],  xmax = squares$xmax[13],   ymin = squares$ymin[13], ymax = squares$ymax[13],   fill = "gray30") +
-      geom_rect(xmin = squares$xmin[14],  xmax = squares$xmax[14],   ymin = squares$ymin[14], ymax = squares$ymax[14],   fill = "gray70") +      
-      geom_rect(xmin = squares$xmin[13],  xmax = squares$xmax[13],   ymin = squares$ymin[13], ymax = squares$ymax[13],   fill = "gray30") +
-      geom_rect(xmin = squares$xmin[14],  xmax = squares$xmax[14],   ymin = squares$ymin[14], ymax = squares$ymax[14],   fill = "gray70") +
-      geom_edge_link(edge_color = "gray") +
-      geom_node_point(aes(size = 2, color = "gray")) +                                         
-      geom_node_text(aes(label = name), nudge_y = 0.05, nudge_x = 0.2)+ 
+      geom_rect(data = squares, 
+                mapping = aes(xmin = xmin, 
+                              xmax = xmax, 
+                              ymin = ymin, 
+                              ymax = ymax, 
+                              fill = sqr,
+                              ), 
+                color = "gray70",
+                show.legend = FALSE) +
+                                               
       scale_x_continuous(breaks = 1:8, labels = letters[1:8]) +
       scale_y_continuous(breaks = 1:8, labels = 1:8)  +
-      geom_segment(data = board, aes(x, y, xend = xend, yend = yend), color = "gray50") +
-      geom_segment(data = board, aes(y, x, xend = yend, yend = xend), color = "gray50") +
+      geom_segment(data = board, aes(x, y, xend = xend, yend = yend), color = "white") +
+      geom_segment(data = board, aes(y, x, xend = yend, yend = xend), color = "white") +
+      #geom_node_text(aes(label = name), nudge_y = 0.35, nudge_x = -0.3, color = "white") +
+      geom_text(data = rank_labels, mapping = aes(x = x, y = y, label = label)) +
+      geom_text(data = file_labels, mapping = aes(x = x, y = y, label = label)) +
+      geom_edge_link(
+        aes(
+        #mapping = aes(
+        #edge_width = 1
+        #,
+        #edge_color = weight
+        #edge_alpha = 0.5
+        
+        #)
+        width = (1/weight)*7),
+        color = "gray60",
+        show.legend = FALSE) +
+      scale_edge_width(range = c(0.5, 4)) +
+      #geom_node_point(aes(size = 0.5),
+      #                color = "gray50",
+      #                show.legend = FALSE) +
+      geom_node_text(size = 17.5, aes(label = unicode_piece), nudge_y = 0.1, nudge_x = 0, color = "white") +
       theme_void() +
       coord_equal()
+    
+    #layout <- create_layout(graph, layout = "igraph", algorithm = "nicely")
     
     show(graph_plot)
   }
 }
 
+generate_move_graph("queen")
 
 
-generate_move_graph("king")
+nodes <- data.frame(name = as.character(chessboard_nodes$coordinates))
+
+nodes
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+### misc ###
+
+
+abs(1 - (weight/10))
+
+
+render_board <- function() {
+  
+  board <- data.frame(x = 0:8 - 0.5, y = 0 - 0.5, xend = 0:8 - 0.5, yend = 8 - 0.5)
+  
+  squares <- unique(data.frame(expand.grid(-1:8 + 0.5, -1:8 + 0.5)) %>%
+                      filter(Var1 < 7 & Var2 < 7) %>%
+                      rename(xmin = Var1,
+                             ymin = Var2) %>%
+                      mutate(xmax = xmin + 1,
+                             ymax = ymin + 1,
+                             sqr = rep(c(1,0,1,0,1,0,1,0,0,1,0,1,0,1,0,1),4)))
+  
+  rank_labels <- data.frame(x = c(0:7),
+                            y = rep(7.75),
+                            label = c(1:8))
+  
+  file_labels <- data.frame(x = rep(-0.75),
+                            y = c(0:7),
+                            label = c(letters[1:8]))
+  
+  chessboard <- ggplot() + 
+    geom_rect(data = squares, 
+              mapping = aes(xmin = xmin, 
+                            xmax = xmax, 
+                            ymin = ymin, 
+                            ymax = ymax, 
+                            fill = sqr,
+              ), 
+              color = "gray70",
+              show.legend = FALSE) +
+    
+    scale_x_continuous(breaks = 1:8, labels = letters[1:8]) +
+    scale_y_continuous(breaks = 1:8, labels = 1:8)  +
+    geom_segment(data = board, aes(x, y, xend = xend, yend = yend), color = "white") +
+    geom_segment(data = board, aes(y, x, xend = yend, yend = xend), color = "white") +
+    geom_text(data = rank_labels, mapping = aes(x = x, y = y, label = label)) +
+    geom_text(data = file_labels, mapping = aes(x = x, y = y, label = label)) +
+    theme_void() +
+    coord_equal()
+  
+  
+  
+  return(chessboard)
+}
+
+
+render_piece <- function(piece) {
+  
+  grouped_move_table <- move_table %>%
+    filter(type == piece)
+  
+  links <- grouped_move_table %>%
+    mutate(src = source_coordinates, 
+           target = target_coordinates,
+           group = type,
+           weight = travel) %>%
+    select(src, target, group, weight)
+  
+  nodes <- data.frame(name = as.character(chessboard_nodes$coordinates))
+  
+  graph <- tbl_graph(nodes = nodes,
+                     edges = links,
+                     directed = FALSE)
+  
+  unicode_piece <- pieces_df %>%
+    filter(piece == name,
+           color == "black") %>%
+    select(unicode)
+  
+  unicode_piece <- unlist(unicode_piece)
+  
+  graph_plot <- ggraph(graph, layout = "grid") + 
+    geom_edge_link(
+      aes(
+        #mapping = aes(
+        #edge_width = 1
+        #,
+        #edge_color = weight
+        #edge_alpha = 0.5
+        
+        #)
+        width = (1/weight)*7),
+      color = "gray60",
+      show.legend = FALSE) +
+    scale_edge_width(range = c(0.5, 4)) +
+    #geom_node_point(aes(size = 0.5),
+    #                color = "gray50",
+    #                show.legend = FALSE) +
+    geom_node_text(size = 17.5, aes(label = unicode_piece), nudge_y = 0.1, nudge_x = 0, color = "white") +
+    theme_void() +
+    coord_equal()
+  
+  return(graph_plot)
+}
+  
+  
+  
+  
 grouped_move_table <- move_table %>%
   filter(type == "knight")
 

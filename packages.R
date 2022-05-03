@@ -13,4 +13,4 @@ require("ggplot2")
 require("ggraph")
 require("gganimate")
 require("networkD3")
-
+require("tweenr")
